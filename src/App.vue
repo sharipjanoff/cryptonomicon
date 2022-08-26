@@ -92,9 +92,27 @@
       </section>
       <hr class="w-full border-t border-gray-600 my-4" />
       <template v-if="tickers.length">
+        <div>
+          <button
+            v-if="page > 1"
+            @click="page = page - 1"
+            class="my-4 mr-1 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Назад
+          </button>
+          <button
+            v-if="hasNextPage"
+            @click="page = page + 1"
+            class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Вперед
+          </button>
+          Фильтрация
+          <input v-model="filter" type="text" class="mr-1" @input="page = 1" />
+        </div>
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t of tickers"
+            v-for="t in filteredTickers()"
             :key="t.name"
             @click="select(t)"
             :class="{
@@ -187,28 +205,70 @@ export default {
       tickers: [],
       sel: null,
       graph: [],
+      page: 1,
+      filter: "",
+      hasNextPage: true,
     };
   },
+
+  created() {
+    const windowData = Object.fromEntries(
+      new URL(window.location).searchParams.entries()
+    );
+    if (windowData.filter) {
+      this.filter = windowData.filter;
+    }
+    if (windowData.page) {
+      this.page = windowData.page;
+    }
+    const tickersData = localStorage.getItem("cryptonomicon-list");
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach((ticker) => {
+        this.subscribeToUpdates(ticker.name);
+      });
+    }
+  },
+
   methods: {
-    add() {
-      const CurrentTicker = {
-        name: this.ticker.toUpperCase(),
-        price: "-",
-      };
-      this.tickers.push(CurrentTicker);
+    filteredTickers() {
+      const start = (this.page - 1) * 6;
+      const end = this.page * 6;
+
+      const filteredTickers = this.tickers.filter((ticker) =>
+        ticker.name.includes(this.filter.toUpperCase())
+      );
+
+      this.hasNextPage = filteredTickers.length > end;
+
+      return filteredTickers.slice(start, end);
+    },
+
+    subscribeToUpdates(tickerName) {
       setInterval(async () => {
         const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${CurrentTicker.name}&tsyms=USD&api_key=3a3e0221957c5776e5f258e3a6e47eb0cda260570d35a0392fd54061e134f8c1`
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=3a3e0221957c5776e5f258e3a6e47eb0cda260570d35a0392fd54061e134f8c1`
         );
         const data = await f.json();
-        this.tickers.find((t) => t.name === CurrentTicker.name).price =
+        this.tickers.find((t) => t.name === tickerName).price =
           data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
 
-        if (this.sel?.name === CurrentTicker.name) {
+        if (this.sel?.name === tickerName) {
           this.graph.push(data.USD);
         }
       }, 5000);
       this.ticker = "";
+    },
+
+    add() {
+      const currentTicker = {
+        name: this.ticker.toUpperCase(),
+        price: "-",
+      };
+      this.tickers.push(currentTicker);
+      this.filter = "";
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
+      this.subscribeToUpdates(currentTicker.name);
     },
     handleDelete(tickerToRemove) {
       this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
@@ -226,6 +286,24 @@ export default {
     select(ticker) {
       this.sel = ticker;
       this.graph = [];
+    },
+  },
+
+  watch: {
+    filter() {
+      this.page = 1;
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      );
+    },
+    page() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      );
     },
   },
 };
